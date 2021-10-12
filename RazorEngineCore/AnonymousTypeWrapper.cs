@@ -19,7 +19,7 @@ namespace RazorEngineCore
         {
             PropertyInfo propertyInfo = this.model.GetType().GetProperty(binder.Name);
 
-            if (propertyInfo == null)
+            if (propertyInfo is null)
             {
                 result = null;
                 return false;
@@ -27,7 +27,7 @@ namespace RazorEngineCore
 
             result = propertyInfo.GetValue(this.model, null);
 
-            if (result == null)
+            if (result is null)
             {
                 return true;
             }

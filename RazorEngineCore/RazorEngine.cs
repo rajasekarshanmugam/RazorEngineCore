@@ -1,141 +1,145 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Razor.Language;
+﻿using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection.Metadata;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace RazorEngineCore
 {
-    public class RazorEngine : IRazorEngine
-    {
-        public IRazorEngineCompiledTemplate<T> Compile<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
-        {
-            IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
-            
-            compilationOptionsBuilder.AddAssemblyReference(typeof(T).Assembly);
-            compilationOptionsBuilder.Inherits(typeof(T));
+	public class RazorEngine : IRazorEngine
+	{
+		public IRazorEngineCompiledTemplate<T> Compile<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
+		{
+			IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
 
-            builderAction?.Invoke(compilationOptionsBuilder);
+			compilationOptionsBuilder.AddAssemblyReference(typeof(T).Assembly);
+			compilationOptionsBuilder.Inherits(typeof(T));
 
-            MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
-           
-            return new RazorEngineCompiledTemplate<T>(memoryStream);
-        }
+			builderAction?.Invoke(compilationOptionsBuilder);
 
-        public Task<IRazorEngineCompiledTemplate<T>> CompileAsync<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
-        {
-            return Task.Factory.StartNew(() => this.Compile<T>(content: content, builderAction: builderAction));
-        }
+			MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
 
-        public IRazorEngineCompiledTemplate Compile(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
-        {
-            IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
-            compilationOptionsBuilder.Inherits(typeof(RazorEngineTemplateBase));
-             
-            builderAction?.Invoke(compilationOptionsBuilder);
+			return new RazorEngineCompiledTemplate<T>(memoryStream);
+		}
 
-            MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
+		public Task<IRazorEngineCompiledTemplate<T>> CompileAsync<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
+		{
+			return Task.Factory.StartNew(() => this.Compile<T>(content: content, builderAction: builderAction));
+		}
 
-            return new RazorEngineCompiledTemplate(memoryStream);
-        }
+		public IRazorEngineCompiledTemplate Compile(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
+		{
+			IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
+			compilationOptionsBuilder.Inherits(typeof(RazorEngineTemplateBase));
 
-        public Task<IRazorEngineCompiledTemplate> CompileAsync(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
-        {
-            return Task.Factory.StartNew(() => this.Compile(content: content, builderAction: builderAction));
-        }
-        
-        private MemoryStream CreateAndCompileToStream(string templateSource, RazorEngineCompilationOptions options)
-        {
-            templateSource = this.WriteDirectives(templateSource, options);
+			builderAction?.Invoke(compilationOptionsBuilder);
 
-            RazorProjectEngine engine = RazorProjectEngine.Create(
-                RazorConfiguration.Default,
-                RazorProjectFileSystem.Create(@"."),
-                (builder) =>
-                {
-                    builder.SetNamespace(options.TemplateNamespace);
-                });
+			MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
 
-            string fileName = Path.GetRandomFileName();
+			return new RazorEngineCompiledTemplate(memoryStream);
+		}
 
-            RazorSourceDocument document = RazorSourceDocument.Create(templateSource, fileName);
-            
-            RazorCodeDocument codeDocument = engine.Process(
-                document,
-                null,
-                new List<RazorSourceDocument>(),
-                new List<TagHelperDescriptor>());
+		public Task<IRazorEngineCompiledTemplate> CompileAsync(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
+		{
+			return Task.Factory.StartNew(() => this.Compile(content: content, builderAction: builderAction));
+		}
 
-            RazorCSharpDocument razorCSharpDocument = codeDocument.GetCSharpDocument();
+		private MemoryStream CreateAndCompileToStream(string templateSource, RazorEngineCompilationOptions options)
+		{
+			templateSource = this.WriteDirectives(templateSource, options);
 
-            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(razorCSharpDocument.GeneratedCode);
+			RazorProjectEngine engine = RazorProjectEngine.Create(
+				RazorConfiguration.Default,
+				RazorProjectFileSystem.Create(@"."),
+				(builder) =>
+				{
+					builder.SetNamespace(options.TemplateNamespace);
+				});
 
-            CSharpCompilation compilation = CSharpCompilation.Create(
-                fileName,
-                new[]
-                {
-                    syntaxTree
-                },
-                options.ReferencedAssemblies
-                   .Select(ass =>
-                   {
+			string fileName = Path.GetRandomFileName();
+
+			RazorSourceDocument document = RazorSourceDocument.Create(templateSource, fileName);
+
+			RazorCodeDocument codeDocument = engine.Process(
+				document,
+				null,
+				new List<RazorSourceDocument>(),
+				new List<TagHelperDescriptor>());
+
+			RazorCSharpDocument razorCSharpDocument = codeDocument.GetCSharpDocument();
+
+			SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(razorCSharpDocument.GeneratedCode);
+
+			CSharpCompilationOptions compilerOptions = options.CompilationOptions != null
+				? options.CompilationOptions.WithOutputKind(OutputKind.DynamicallyLinkedLibrary)
+				: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+
+			CSharpCompilation compilation = CSharpCompilation.Create(
+				fileName,
+				new[]
+				{
+					syntaxTree
+				},
+				options.ReferencedAssemblies
+				   .Select(ass =>
+				   {
 #if NETSTANDARD2_0
-                            return  MetadataReference.CreateFromFile(ass.Location); 
+                            return  MetadataReference.CreateFromFile(ass.Location);
 #else
-                       unsafe
-                       {
-                           ass.TryGetRawMetadata(out byte* blob, out int length);
-                           ModuleMetadata moduleMetadata = ModuleMetadata.CreateFromMetadata((IntPtr)blob, length);
-                           AssemblyMetadata assemblyMetadata = AssemblyMetadata.Create(moduleMetadata);
-                           PortableExecutableReference metadataReference = assemblyMetadata.GetReference();
+					   unsafe
+					   {
+						   ass.TryGetRawMetadata(out byte* blob, out int length);
+						   ModuleMetadata moduleMetadata = ModuleMetadata.CreateFromMetadata((IntPtr)blob, length);
+						   AssemblyMetadata assemblyMetadata = AssemblyMetadata.Create(moduleMetadata);
+						   PortableExecutableReference metadataReference = assemblyMetadata.GetReference();
 
-                           return metadataReference;
-                       }
+						   return metadataReference;
+					   }
 #endif
-                   })
-                    .Concat(options.MetadataReferences)
-                    .ToList(),
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+				   })
+					.Concat(options.MetadataReferences)
+					.ToList(),
+				compilerOptions);
 
-            MemoryStream memoryStream = new MemoryStream();
+			MemoryStream memoryStream = new MemoryStream();
 
-            EmitResult emitResult = compilation.Emit(memoryStream);
+			EmitResult emitResult = compilation.Emit(memoryStream, options: options.EmitOptions);
 
-            if (!emitResult.Success)
-            {
-                RazorEngineCompilationException exception = new RazorEngineCompilationException()
-                {
-                    Errors = emitResult.Diagnostics.ToList(),
-                    GeneratedCode = razorCSharpDocument.GeneratedCode
-                };
+			if (!emitResult.Success)
+			{
+				RazorEngineCompilationException exception = new RazorEngineCompilationException()
+				{
+					Errors = emitResult.Diagnostics.ToList(),
+					GeneratedCode = razorCSharpDocument.GeneratedCode
+				};
 
-                throw exception;
-            }
+				throw exception;
+			}
 
-            memoryStream.Position = 0;
+			memoryStream.Position = 0;
 
-            return memoryStream;
-        }
+			return memoryStream;
+		}
 
-        private string WriteDirectives(string content, RazorEngineCompilationOptions options)
-        {
-            StringBuilder stringBuilder = new StringBuilder();
-            stringBuilder.AppendLine($"@inherits {options.Inherits}");
+		private string WriteDirectives(string content, RazorEngineCompilationOptions options)
+		{
+			StringBuilder stringBuilder = new StringBuilder();
+			stringBuilder.AppendLine($"@inherits {options.Inherits}");
 
-            foreach (string entry in options.DefaultUsings)
-            {
-                stringBuilder.AppendLine($"@using {entry}");
-            }
+			foreach (string entry in options.DefaultUsings)
+			{
+				stringBuilder.AppendLine($"@using {entry}");
+			}
 
-            stringBuilder.Append(content);
+			stringBuilder.Append(content);
 
-            return stringBuilder.ToString();
-        }
-    }
+			return stringBuilder.ToString();
+		}
+	}
 }
