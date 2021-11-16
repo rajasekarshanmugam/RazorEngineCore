@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -89,8 +88,8 @@ namespace RazorEngineCore
 				options.ReferencedAssemblies
 				   .Select(ass =>
 				   {
-#if NETSTANDARD2_0
-                            return  MetadataReference.CreateFromFile(ass.Location);
+#if NETSTANDARD2_0 || NET6_0_OR_GREATER
+					   return MetadataReference.CreateFromFile(ass.Location);
 #else
 					   unsafe
 					   {
