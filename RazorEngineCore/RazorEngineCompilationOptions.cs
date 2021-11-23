@@ -11,6 +11,7 @@ namespace RazorEngineCore
 	public class RazorEngineCompilationOptions
 	{
 		public CSharpCompilationOptions CompilationOptions { get; set; }
+		public CSharpParseOptions ParseOptions { get; set; }
 		public EmitOptions EmitOptions { get; set; }
 		public HashSet<Assembly> ReferencedAssemblies { get; set; }
 

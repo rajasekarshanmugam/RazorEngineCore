@@ -23,8 +23,8 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>-->
 	<ItemGroup>
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.0-beta-20204-02" PrivateAssets="All" />
-		<PackageReference Include="Microsoft.AspNetCore.Razor.Language" Version="6.0.0-rc.1.21452.15" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.0.0-4.final" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+		<PackageReference Include="Microsoft.AspNetCore.Razor.Language" Version="6.0.0" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.1.0-1.final" />
 	</ItemGroup>
 </Project>

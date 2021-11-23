@@ -73,7 +73,7 @@ namespace RazorEngineCore
 
 			RazorCSharpDocument razorCSharpDocument = codeDocument.GetCSharpDocument();
 
-			SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(razorCSharpDocument.GeneratedCode);
+			SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(razorCSharpDocument.GeneratedCode, options: options.ParseOptions);
 
 			CSharpCompilationOptions compilerOptions = options.CompilationOptions != null
 				? options.CompilationOptions.WithOutputKind(OutputKind.DynamicallyLinkedLibrary)
