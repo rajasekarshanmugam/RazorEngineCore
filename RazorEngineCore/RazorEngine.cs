@@ -2,88 +2,113 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
+using Microsoft.CodeAnalysis.Text;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace RazorEngineCore
 {
 	public class RazorEngine : IRazorEngine
 	{
-		public IRazorEngineCompiledTemplate<T> Compile<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
+		/// <summary>
+		/// Compiles the specified file name.
+		/// </summary>
+		/// <typeparam name="T"></typeparam>
+		/// <param name="scriptName">Name of the script.</param>
+		/// <param name="content">The content.</param>
+		/// <param name="builderAction">The builder action.</param>
+		/// <returns>IRazorEngineCompiledTemplate&lt;T&gt;.</returns>
+		public IRazorEngineCompiledTemplate<T> Compile<T>(string scriptName, string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
 		{
-			IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
+			var compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
 
 			compilationOptionsBuilder.AddAssemblyReference(typeof(T).Assembly);
 			compilationOptionsBuilder.Inherits(typeof(T));
 
 			builderAction?.Invoke(compilationOptionsBuilder);
 
-			MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
+			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(scriptName, content, compilationOptionsBuilder.Options);
 
-			return new RazorEngineCompiledTemplate<T>(memoryStream);
+			return new RazorEngineCompiledTemplate<T>(assemblyBytes, pdbBytes, true);
 		}
 
-		public Task<IRazorEngineCompiledTemplate<T>> CompileAsync<T>(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
+		/// <summary>
+		/// Compiles the specified file name.
+		/// </summary>
+		/// <param name="scriptName">Name of the script.</param>
+		/// <param name="content">The content.</param>
+		/// <param name="builderAction">The builder action.</param>
+		/// <returns>IRazorEngineCompiledTemplate.</returns>
+		public IRazorEngineCompiledTemplate Compile(string scriptName, string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
 		{
-			return Task.Factory.StartNew(() => this.Compile<T>(content: content, builderAction: builderAction));
-		}
-
-		public IRazorEngineCompiledTemplate Compile(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
-		{
-			IRazorEngineCompilationOptionsBuilder compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
+			var compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
 			compilationOptionsBuilder.Inherits(typeof(RazorEngineTemplateBase));
 
 			builderAction?.Invoke(compilationOptionsBuilder);
 
-			MemoryStream memoryStream = this.CreateAndCompileToStream(content, compilationOptionsBuilder.Options);
+			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(scriptName, content, compilationOptionsBuilder.Options);
 
-			return new RazorEngineCompiledTemplate(memoryStream);
+			return new RazorEngineCompiledTemplate(assemblyBytes, pdbBytes, true);
 		}
 
-		public Task<IRazorEngineCompiledTemplate> CompileAsync(string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
+		/// <summary>
+		/// Compile to stream.
+		/// </summary>
+		/// <param name="scriptName">Name of the script.</param>
+		/// <param name="csSource">The cs source.</param>
+		/// <param name="options">The options.</param>
+		/// <returns>System.ValueTuple&lt;MemoryStream, MemoryStream&gt;.</returns>
+		private (byte[] AssemblyBytes, byte[] PdbBytes) CreateAndCompileToStream(string scriptName, string csSource, RazorEngineCompilationOptions options)
 		{
-			return Task.Factory.StartNew(() => this.Compile(content: content, builderAction: builderAction));
-		}
+			csSource = this.WriteDirectives(csSource, options);
 
-		private MemoryStream CreateAndCompileToStream(string templateSource, RazorEngineCompilationOptions options)
-		{
-			templateSource = this.WriteDirectives(templateSource, options);
-
-			RazorProjectEngine engine = RazorProjectEngine.Create(
+			var projectDirectory = options.ProjectDirectory ?? ".";
+			var engine = RazorProjectEngine.Create(
 				RazorConfiguration.Default,
-				RazorProjectFileSystem.Create(@"."),
+				RazorProjectFileSystem.Create(projectDirectory),
 				(builder) =>
 				{
 					builder.SetNamespace(options.TemplateNamespace);
 				});
 
-			string fileName = Path.GetRandomFileName();
+			var workingDirectory = options.WorkingDirectory ?? ".";
+			var sourceName = $"{scriptName}.cs";
+			var sourceCodePath = Path.Combine(workingDirectory, sourceName);
 
-			RazorSourceDocument document = RazorSourceDocument.Create(templateSource, fileName);
+			var assemblyPath = Path.ChangeExtension(sourceCodePath, "dll");
+			var symbolsPath = Path.ChangeExtension(sourceCodePath, "pdb");
+			var document = RazorSourceDocument.Create(csSource, sourceName);
 
-			RazorCodeDocument codeDocument = engine.Process(
+			var codeDocument = engine.Process(
 				document,
 				null,
 				new List<RazorSourceDocument>(),
 				new List<TagHelperDescriptor>());
 
-			RazorCSharpDocument razorCSharpDocument = codeDocument.GetCSharpDocument();
+			var razorCSharpDocument = codeDocument.GetCSharpDocument();
 
-			SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(razorCSharpDocument.GeneratedCode, options: options.ParseOptions);
+			var encoding = Encoding.UTF8;
+			var code = razorCSharpDocument.GeneratedCode;
+			File.WriteAllText(sourceCodePath, code);
 
-			CSharpCompilationOptions compilerOptions = options.CompilationOptions != null
-				? options.CompilationOptions.WithOutputKind(OutputKind.DynamicallyLinkedLibrary)
-				: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+			var buffer = encoding.GetBytes(code);
+			var sourceText = SourceText.From(buffer, buffer.Length, encoding, canBeEmbedded: true);
+			var syntaxTree = CSharpSyntaxTree.ParseText(sourceText, options: options.ParseOptions, path: sourceCodePath);
+			var syntaxRootNode = syntaxTree.GetRoot() as CSharpSyntaxNode;
+			var encodedSyntaxTree = CSharpSyntaxTree.Create(syntaxRootNode, null, sourceCodePath, encoding);
 
-			CSharpCompilation compilation = CSharpCompilation.Create(
-				fileName,
+			var compilerOptions = (options.CompilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+				.WithOutputKind(OutputKind.DynamicallyLinkedLibrary)
+				.WithOptimizationLevel(options.IsDebug ? OptimizationLevel.Debug : OptimizationLevel.Release);
+
+			var compilation = CSharpCompilation.Create(
+				sourceName,
 				new[]
 				{
-					syntaxTree
+					encodedSyntaxTree
 				},
 				options.ReferencedAssemblies
 				   .Select(ass =>
@@ -106,13 +131,27 @@ namespace RazorEngineCore
 					.ToList(),
 				compilerOptions);
 
-			MemoryStream memoryStream = new MemoryStream();
+			var emitOptions = new EmitOptions(
+				debugInformationFormat: DebugInformationFormat.PortablePdb,
+				pdbFilePath: symbolsPath);
 
-			EmitResult emitResult = compilation.Emit(memoryStream, options: options.EmitOptions);
+			var embeddedTexts = new List<EmbeddedText>
+			{
+				EmbeddedText.FromSource(sourceCodePath, sourceText),
+			};
+
+			using var assemblyStream = new MemoryStream();
+			using var symbolsStream = new MemoryStream();
+
+			var emitResult = compilation.Emit(
+				peStream: assemblyStream,
+				pdbStream: symbolsStream,
+				embeddedTexts: embeddedTexts,
+				options: emitOptions);
 
 			if (!emitResult.Success)
 			{
-				RazorEngineCompilationException exception = new RazorEngineCompilationException()
+				var exception = new RazorEngineCompilationException()
 				{
 					Errors = emitResult.Diagnostics.ToList(),
 					GeneratedCode = razorCSharpDocument.GeneratedCode
@@ -121,9 +160,7 @@ namespace RazorEngineCore
 				throw exception;
 			}
 
-			memoryStream.Position = 0;
-
-			return memoryStream;
+			return (assemblyStream.ToArray(), symbolsStream.ToArray());
 		}
 
 		private string WriteDirectives(string content, RazorEngineCompilationOptions options)

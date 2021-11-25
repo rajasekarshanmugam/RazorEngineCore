@@ -10,9 +10,12 @@ namespace RazorEngineCore
 {
 	public class RazorEngineCompilationOptions
 	{
+		public string ProjectDirectory { get; set; }
+		public string WorkingDirectory { get; set; }
+		public bool IsDebug { get; set; }
+
 		public CSharpCompilationOptions CompilationOptions { get; set; }
 		public CSharpParseOptions ParseOptions { get; set; }
-		public EmitOptions EmitOptions { get; set; }
 		public HashSet<Assembly> ReferencedAssemblies { get; set; }
 
 		public HashSet<MetadataReference> MetadataReferences { get; set; } = new HashSet<MetadataReference>();
