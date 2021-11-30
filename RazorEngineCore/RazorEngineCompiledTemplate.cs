@@ -58,7 +58,7 @@ namespace RazorEngineCore
 
 		public async Task<string> RunAsync(object model = null)
 		{
-			if (model != null && model.IsAnonymous())
+			if (model is not null && model.IsAnonymous())
 			{
 				model = new AnonymousTypeWrapper(model);
 			}
