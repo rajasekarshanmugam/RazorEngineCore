@@ -21,7 +21,7 @@ namespace RazorEngineCore
 		/// <param name="content">The content.</param>
 		/// <param name="builderAction">The builder action.</param>
 		/// <returns>IRazorEngineCompiledTemplate&lt;T&gt;.</returns>
-		public IRazorEngineCompiledTemplate<T> Compile<T>(string scriptName, string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
+		public IRazorEngineCompiledTemplate<T> Compile<T>(string razorSourcePath, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null) where T : IRazorEngineTemplate
 		{
 			var compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
 
@@ -30,7 +30,7 @@ namespace RazorEngineCore
 
 			builderAction?.Invoke(compilationOptionsBuilder);
 
-			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(scriptName, content, compilationOptionsBuilder.Options);
+			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(razorSourcePath, compilationOptionsBuilder.Options);
 
 			return new RazorEngineCompiledTemplate<T>(assemblyBytes, pdbBytes, true);
 		}
@@ -42,14 +42,14 @@ namespace RazorEngineCore
 		/// <param name="content">The content.</param>
 		/// <param name="builderAction">The builder action.</param>
 		/// <returns>IRazorEngineCompiledTemplate.</returns>
-		public IRazorEngineCompiledTemplate Compile(string scriptName, string content, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
+		public IRazorEngineCompiledTemplate Compile(string razorSourcePath, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
 		{
 			var compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
 			compilationOptionsBuilder.Inherits(typeof(RazorEngineTemplateBase));
 
 			builderAction?.Invoke(compilationOptionsBuilder);
 
-			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(scriptName, content, compilationOptionsBuilder.Options);
+			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(razorSourcePath, compilationOptionsBuilder.Options);
 
 			return new RazorEngineCompiledTemplate(assemblyBytes, pdbBytes, true);
 		}
@@ -57,13 +57,13 @@ namespace RazorEngineCore
 		/// <summary>
 		/// Compile to stream.
 		/// </summary>
-		/// <param name="scriptName">Name of the script.</param>
-		/// <param name="csSource">The cs source.</param>
+		/// <param name="razorSourcePath">The razor source path.</param>
 		/// <param name="options">The options.</param>
 		/// <returns>System.ValueTuple&lt;MemoryStream, MemoryStream&gt;.</returns>
-		private (byte[] AssemblyBytes, byte[] PdbBytes) CreateAndCompileToStream(string scriptName, string csSource, RazorEngineCompilationOptions options)
+		private (byte[] AssemblyBytes, byte[] PdbBytes) CreateAndCompileToStream(string razorSourcePath, RazorEngineCompilationOptions options)
 		{
-			csSource = this.WriteDirectives(csSource, options);
+			var razorSource = File.ReadAllText(razorSourcePath);
+			razorSource = this.WriteDirectives(razorSource, options);
 
 			var projectDirectory = options.ProjectDirectory ?? ".";
 			var engine = RazorProjectEngine.Create(
@@ -75,12 +75,10 @@ namespace RazorEngineCore
 				});
 
 			var workingDirectory = options.WorkingDirectory ?? ".";
-			var sourceName = $"{scriptName}.cs";
-			var sourceCodePath = Path.Combine(workingDirectory, sourceName);
 
-			var assemblyPath = Path.ChangeExtension(sourceCodePath, "dll");
-			var symbolsPath = Path.ChangeExtension(sourceCodePath, "pdb");
-			var document = RazorSourceDocument.Create(csSource, sourceName);
+			var razorsourceName = Path.GetFileName(razorSourcePath);
+			var cssourceName = $"{razorsourceName}.cs";
+			var document = RazorSourceDocument.Create(razorSource, razorsourceName);
 
 			var codeDocument = engine.Process(
 				document,
@@ -91,24 +89,26 @@ namespace RazorEngineCore
 			var razorCSharpDocument = codeDocument.GetCSharpDocument();
 
 			var encoding = Encoding.UTF8;
-			var code = razorCSharpDocument.GeneratedCode;
-			File.WriteAllText(sourceCodePath, code);
+			var cscode = razorCSharpDocument.GeneratedCode;
 
-			var buffer = encoding.GetBytes(code);
-			var sourceText = SourceText.From(buffer, buffer.Length, encoding, canBeEmbedded: true);
-			var syntaxTree = CSharpSyntaxTree.ParseText(sourceText, options: options.ParseOptions, path: sourceCodePath);
-			var syntaxRootNode = syntaxTree.GetRoot() as CSharpSyntaxNode;
-			var encodedSyntaxTree = CSharpSyntaxTree.Create(syntaxRootNode, null, sourceCodePath, encoding);
+			var razorbuffer = encoding.GetBytes(razorSource);
+			var razorsourceText = SourceText.From(razorbuffer, razorbuffer.Length, encoding, canBeEmbedded: true);
+
+			var csbuffer = encoding.GetBytes(cscode);
+			var cssourceText = SourceText.From(csbuffer, csbuffer.Length, encoding, canBeEmbedded: true);
+			var cssyntaxTree = CSharpSyntaxTree.ParseText(cssourceText, options: options.ParseOptions, path: razorSource);
+			var cssyntaxRootNode = cssyntaxTree.GetRoot() as CSharpSyntaxNode;
+			var csencodedSyntaxTree = CSharpSyntaxTree.Create(cssyntaxRootNode, null, cssourceName, encoding);
 
 			var compilerOptions = (options.CompilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
 				.WithOutputKind(OutputKind.DynamicallyLinkedLibrary)
 				.WithOptimizationLevel(options.IsDebug ? OptimizationLevel.Debug : OptimizationLevel.Release);
 
 			var compilation = CSharpCompilation.Create(
-				sourceName,
+				cssourceName,
 				new[]
 				{
-					encodedSyntaxTree
+					csencodedSyntaxTree
 				},
 				options.ReferencedAssemblies
 				   .Select(ass =>
@@ -131,13 +131,13 @@ namespace RazorEngineCore
 					.ToList(),
 				compilerOptions);
 
-			var emitOptions = new EmitOptions(
-				debugInformationFormat: DebugInformationFormat.PortablePdb,
-				pdbFilePath: symbolsPath);
+			var symbolsName = Path.ChangeExtension(razorsourceName, ".pdb");
+			var emitOptions = new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb, pdbFilePath: symbolsName);
 
 			var embeddedTexts = new List<EmbeddedText>
 			{
-				EmbeddedText.FromSource(sourceCodePath, sourceText),
+				EmbeddedText.FromSource(razorsourceName, razorsourceText),
+				EmbeddedText.FromSource(cssourceName, cssourceText),
 			};
 
 			using var assemblyStream = new MemoryStream();
@@ -151,7 +151,7 @@ namespace RazorEngineCore
 
 			if (!emitResult.Success)
 			{
-				var exception = new RazorEngineCompilationException()
+				var exception = new RazorEngineCompilationException
 				{
 					Errors = emitResult.Diagnostics.ToList(),
 					GeneratedCode = razorCSharpDocument.GeneratedCode
