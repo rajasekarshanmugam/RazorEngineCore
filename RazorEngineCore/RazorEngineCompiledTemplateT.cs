@@ -5,6 +5,12 @@ using System.Threading.Tasks;
 
 namespace RazorEngineCore
 {
+	/// <summary>
+	/// Class RazorEngineCompiledTemplate.
+	/// Implements the <see cref="RazorEngineCore.IRazorEngineCompiledTemplate{T}" />
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
+	/// <seealso cref="RazorEngineCore.IRazorEngineCompiledTemplate{T}" />
 	public class RazorEngineCompiledTemplate<T> : IRazorEngineCompiledTemplate<T> where T : IRazorEngineTemplate
 	{
 		private readonly byte[] _assemblyBytes;
@@ -31,6 +37,12 @@ namespace RazorEngineCore
 			this._templateType = assembly.GetType("TemplateNamespace.Template");
 		}
 
+		/// <summary>
+		/// Loads from file.
+		/// </summary>
+		/// <param name="fileName">Name of the file.</param>
+		/// <param name="pdbFileName">Name of the PDB file.</param>
+		/// <returns>IRazorEngineCompiledTemplate&lt;T&gt;.</returns>
 		public static IRazorEngineCompiledTemplate<T> LoadFromFile(string fileName, string pdbFileName = null)
 		{
 			var assemblyBytes = File.ReadAllBytes(fileName);
@@ -38,6 +50,11 @@ namespace RazorEngineCore
 			return new RazorEngineCompiledTemplate<T>(assemblyBytes, pdbBytes, false);
 		}
 
+		/// <summary>
+		/// Saves to file.
+		/// </summary>
+		/// <param name="assemblyFileName">Name of the assembly file.</param>
+		/// <param name="assemblyPDBFileName">Name of the assembly PDB file.</param>
 		public void SaveToFile(string assemblyFileName, string assemblyPDBFileName = null)
 		{
 			if (this._assemblyBytes is not null)
@@ -50,11 +67,21 @@ namespace RazorEngineCore
 			}
 		}
 
+		/// <summary>
+		/// Runs the specified initializer.
+		/// </summary>
+		/// <param name="initializer">The initializer.</param>
+		/// <returns>System.String.</returns>
 		public string Run(Action<T> initializer)
 		{
 			return this.RunAsync(initializer).GetAwaiter().GetResult();
 		}
 
+		/// <summary>
+		/// Run as an asynchronous operation.
+		/// </summary>
+		/// <param name="initializer">The initializer.</param>
+		/// <returns>A Task&lt;System.String&gt; representing the asynchronous operation.</returns>
 		public async Task<string> RunAsync(Action<T> initializer)
 		{
 			T instance = (T)Activator.CreateInstance(this._templateType);
