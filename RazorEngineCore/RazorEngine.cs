@@ -36,25 +36,6 @@ namespace RazorEngineCore
 		}
 
 		/// <summary>
-		/// Compiles the specified file name.
-		/// </summary>
-		/// <param name="scriptName">Name of the script.</param>
-		/// <param name="content">The content.</param>
-		/// <param name="builderAction">The builder action.</param>
-		/// <returns>IRazorEngineCompiledTemplate.</returns>
-		public IRazorEngineCompiledTemplate Compile(string razorSourcePath, Action<IRazorEngineCompilationOptionsBuilder> builderAction = null)
-		{
-			var compilationOptionsBuilder = new RazorEngineCompilationOptionsBuilder();
-			compilationOptionsBuilder.Inherits(typeof(RazorEngineTemplateBase));
-
-			builderAction?.Invoke(compilationOptionsBuilder);
-
-			var (assemblyBytes, pdbBytes) = this.CreateAndCompileToStream(razorSourcePath, compilationOptionsBuilder.Options);
-
-			return new RazorEngineCompiledTemplate(assemblyBytes, pdbBytes, true);
-		}
-
-		/// <summary>
 		/// Compile to stream.
 		/// </summary>
 		/// <param name="razorSourcePath">The razor source path.</param>
@@ -65,7 +46,7 @@ namespace RazorEngineCore
 			var razorSource = File.ReadAllText(razorSourcePath);
 			razorSource = this.WriteDirectives(razorSource, options);
 
-			var projectDirectory = options.ProjectDirectory ?? ".";
+			var projectDirectory = !string.IsNullOrEmpty(options.ProjectDirectory) ? options.ProjectDirectory : ".";
 			var engine = RazorProjectEngine.Create(
 				RazorConfiguration.Default,
 				RazorProjectFileSystem.Create(projectDirectory),
@@ -137,7 +118,7 @@ namespace RazorEngineCore
 			var embeddedTexts = new List<EmbeddedText>
 			{
 				EmbeddedText.FromSource(razorsourceName, razorsourceText),
-				EmbeddedText.FromSource(cssourceName, cssourceText),
+				//EmbeddedText.FromSource(cssourceName, cssourceText),
 			};
 
 			using var assemblyStream = new MemoryStream();

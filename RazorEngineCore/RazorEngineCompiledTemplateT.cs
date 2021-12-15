@@ -68,16 +68,6 @@ namespace RazorEngineCore
 		}
 
 		/// <summary>
-		/// Runs the specified initializer.
-		/// </summary>
-		/// <param name="initializer">The initializer.</param>
-		/// <returns>System.String.</returns>
-		public string Run(Action<T> initializer)
-		{
-			return this.RunAsync(initializer).GetAwaiter().GetResult();
-		}
-
-		/// <summary>
 		/// Run as an asynchronous operation.
 		/// </summary>
 		/// <param name="initializer">The initializer.</param>
